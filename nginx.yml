@@ -1,0 +1,119 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+data:
+  nginx.conf: |-
+    upstream backend {
+    server phpfpm:9000;
+    }
+    server {
+      listen 80;      
+      server_name _;
+      root /app;
+      access_log  /var/log/nginx/access2.log;
+      error_log /var/log/nginx/error2.log;
+      location / {
+        index index.html index.php;
+        try_files $uri $uri/ /index.php?_url=$uri&$query_string;
+      }
+      location ~* /(\.git|cache|bin|logs|backup|tests)/.*$ { return 403; }    
+      location ~* /(system|vendor)/.*\.(txt|xml|md|html|yaml|yml|php|pl|py|cgi|twig|sh|bat)$ { return 403; }    
+      location ~* /user/.*\.(txt|md|yaml|yml|php|pl|py|cgi|twig|sh|bat)$ { return 403; }    
+      location ~ /(LICENSE\.txt|composer\.lock|composer\.json|nginx\.conf|web\.config|htaccess\.txt|\.htaccess) { return 403; }
+      location ~ \.php$ {
+        fastcgi_pass  backend;
+        fastcgi_index index.php;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_param SCRIPT_FILENAME $document_root/$fastcgi_script_name;
+        include fastcgi_params;
+      }
+    }
+---      
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: nginx
+spec:
+  replicas: 1
+  template:
+    metadata:
+      name: nginx
+      labels:
+        app: nginx
+    spec:
+      hostname: nginx
+      subdomain: default-subdomain   
+      containers:
+      - name: nginx
+        image: nginx:1.13.3        
+        ports:
+        - containerPort: 80
+        volumeMounts:
+          - name: nginx-config
+            mountPath: /etc/nginx/conf.d/
+          - name: app
+            mountPath: /app
+      volumes:
+        - name: nginx-config
+          configMap:
+           name: nginx-config
+        - name: app
+          hostPath:
+           path: /mnt/sda1/app
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: phpfpm
+spec:
+  replicas: 1
+  template:
+    metadata:
+      name: phpfpm
+      labels:
+        app: phpfpm
+    spec:
+      hostname: phpfpm
+      subdomain: default-subdomain  
+      containers:
+      - name: phpfpm
+        image: danieldent/php-56-fpm
+        ports:
+        - containerPort: 9000 
+        command: ["/bin/sh"]
+        args: ["-c", "apt-get update && apt-get install git libzip-dev sudo -y && pecl install zip && echo 'extension=zip.so' > /usr/local/etc/php/conf.d/php.ini && /usr/local/sbin/php-fpm", "--nodaemonize"]
+        volumeMounts:
+        - name: app
+          mountPath: /app
+      volumes:
+        - name: app
+          hostPath:
+           path: /mnt/sda1/app
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+    nodePort: 32400
+    protocol: TCP
+  type: LoadBalancer
+  selector:
+    app: nginx
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: phpfpm
+spec:
+  ports:
+  - port: 9000
+    targetPort: 9000
+    protocol: TCP
+  type: LoadBalancer
+  selector:
+    app: phpfpm

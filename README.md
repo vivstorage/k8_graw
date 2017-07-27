@@ -17,3 +17,15 @@ kubectl exec -ti phpfpm-2800297442-b8078 -- sudo -u www-data bash -c 'cd /app &&
   
 **Testing**  
 minikube service nginx  
+
+  
+I choose basic schema nginx -> php-fpm with load balancing etc, most of time I spend to find  
+docker container with all php stuff there and not found it, so I made a little hack for entrypoint phpfpm container  
+command: ["/bin/sh"]  
+        args: ["-c", "apt-get update && apt-get install git libzip-dev sudo -y && pecl install zip && echo 'extension=zip.so' > /usr/local/etc/php/conf.d/php.ini && /usr/local/sbin/php-fpm", "--nodaemonize"]  
+
+
+By default it starts pod with last nginx version  
+and one with php-fpm 5.6 and they have one shared volume for source code, it will make easy autodeploy cuz we  
+need just replace dir on node/nfs/s3/anywhere or just update code there. Also spent lot time with YAML config itself,  
+with theyr spaces and other nice stuff.  
